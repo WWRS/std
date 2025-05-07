@@ -142,15 +142,121 @@ Deno.test("dateTimeFormatter.format()", async (t) => {
     assertEquals(formatter.format(new Date(2020, 0, 1, 0, 0, 0, 0)), "0");
   });
 
-  await t.step("handles utc", () => {
-    const formatter = new DateTimeFormatter("HH:mm");
-    assertEquals(
-      formatter.format(
-        new Date("2020-01-01T06:30:00.000-01:30"),
-        { timeZone: "UTC" },
-      ),
-      "08:00",
+  // en-US is chosen because most devices will support it
+  // America/Phoenix is chosen because it does not use daylight savings
+  const enUsSupported =
+    Intl.DateTimeFormat.supportedLocalesOf("en-US")[0] === "en-US";
+  if (!enUsSupported) {
+    // deno-lint-ignore no-console
+    console.warn(
+      "Locale not supported: en-US, skipping associated timeZone tests",
     );
+  }
+  await t.step("handles zzzz", () => {
+    const formatter = new DateTimeFormatter("HH:mm zzzz");
+    const date = new Date("2020-01-01T06:30:00.000-01:30");
+    assertEquals(
+      formatter.format(date, { timeZone: "UTC" }),
+      "08:00 Coordinated Universal Time",
+    );
+    if (enUsSupported) {
+      assertEquals(
+        formatter.format(date, {
+          locales: "en-US",
+          timeZone: "America/Phoenix",
+        }),
+        "01:00 Mountain Standard Time",
+      );
+    }
+  });
+  await t.step("handles zzz-z", () => {
+    for (const zFormat of ["zzz", "zz", "z"]) {
+      const formatter = new DateTimeFormatter(`HH:mm ${zFormat}`);
+      const date = new Date("2020-01-01T06:30:00.000-01:30");
+      assertEquals(
+        formatter.format(date, { timeZone: "UTC" }),
+        "08:00 UTC",
+      );
+      if (enUsSupported) {
+        assertEquals(
+          formatter.format(date, {
+            locales: "en-US",
+            timeZone: "America/Phoenix",
+          }),
+          "01:00 MST",
+        );
+      }
+    }
+  });
+  await t.step("handles ZZZZ and OOOO", () => {
+    for (const zFormat of ["ZZZZ", "OOOO"]) {
+      const formatter = new DateTimeFormatter(`HH:mm ${zFormat}`);
+      const date = new Date("2020-01-01T06:30:00.000-01:30");
+      assertEquals(
+        formatter.format(date, { timeZone: "UTC" }),
+        "08:00 GMT",
+      );
+      if (enUsSupported) {
+        assertEquals(
+          formatter.format(date, {
+            locales: "en-US",
+            timeZone: "America/Phoenix",
+          }),
+          "01:00 GMT-07:00",
+        );
+      }
+    }
+  });
+  await t.step("handles O", () => {
+    const formatter = new DateTimeFormatter("HH:mm O");
+    const date = new Date("2020-01-01T06:30:00.000-01:30");
+    assertEquals(
+      formatter.format(date, { timeZone: "UTC" }),
+      "08:00 GMT",
+    );
+    if (enUsSupported) {
+      assertEquals(
+        formatter.format(date, {
+          locales: "en-US",
+          timeZone: "America/Phoenix",
+        }),
+        "01:00 GMT-7",
+      );
+    }
+  });
+  await t.step("handles vvvv", () => {
+    const formatter = new DateTimeFormatter("HH:mm vvvv");
+    const date = new Date("2020-01-01T06:30:00.000-01:30");
+    assertEquals(
+      formatter.format(date, { timeZone: "UTC" }),
+      "08:00 GMT",
+    );
+    if (enUsSupported) {
+      assertEquals(
+        formatter.format(date, {
+          locales: "en-US",
+          timeZone: "America/Phoenix",
+        }),
+        "01:00 Mountain Standard Time",
+      );
+    }
+  });
+  await t.step("handles v", () => {
+    const formatter = new DateTimeFormatter("HH:mm v");
+    const date = new Date("2020-01-01T06:30:00.000-01:30");
+    assertEquals(
+      formatter.format(date, { timeZone: "UTC" }),
+      "08:00 GMT",
+    );
+    if (enUsSupported) {
+      assertEquals(
+        formatter.format(date, {
+          locales: "en-US",
+          timeZone: "America/Phoenix",
+        }),
+        "01:00 MST",
+      );
+    }
   });
 });
 
@@ -173,7 +279,6 @@ Deno.test("new DateTimeFormatter() errors on unknown or unsupported format", () 
   assertThrows(() => new DateTimeFormatter("yyyy-nn-dd"));
   assertThrows(() => new DateTimeFormatter("G"));
   assertThrows(() => new DateTimeFormatter("E"));
-  assertThrows(() => new DateTimeFormatter("z"));
 });
 
 Deno.test("formatDate() throws on unsupported values", () => {
@@ -185,7 +290,7 @@ Deno.test("formatDate() throws on unsupported values", () => {
     "minute",
     "month",
     "second",
-    //"timeZoneName",
+    "timeZoneName",
     "year",
     //"fractionalSecond",
   ] as const;

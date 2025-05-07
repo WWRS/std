@@ -25,10 +25,9 @@ interface DateTimeFormatPart {
   value: string;
 }
 
-type TimeZone = "UTC";
-
 interface Options {
-  timeZone?: TimeZone;
+  timeZone?: string;
+  locales?: Intl.LocalesArgument;
 }
 
 type FormatPart = {
@@ -89,9 +88,9 @@ function symbolToFormatPart(symbol: string): FormatPart {
     case "a":
       return { type: "dayPeriod", value: "short" };
     case "HH":
-      return { type: "hour", value: "2-digit" };
+      return { type: "hour", value: "2-digit", hour12: false };
     case "H":
-      return { type: "hour", value: "numeric" };
+      return { type: "hour", value: "numeric", hour12: false };
     case "hh":
       return { type: "hour", value: "2-digit", hour12: true };
     case "h":
@@ -110,21 +109,21 @@ function symbolToFormatPart(symbol: string): FormatPart {
       return { type: "fractionalSecond", value: 2 };
     case "S":
       return { type: "fractionalSecond", value: 1 };
-    // case "zzzz":
-    //   return { type: "timeZoneName", value: "long" };
-    // case "zzz":
-    // case "zz":
-    // case "z":
-    //   return { type: "timeZoneName", value: "short" };
-    // case "ZZZZ":
-    // case "OOOO":
-    //   return { type: "timeZoneName", value: "longOffset" };
-    // case "O":
-    //   return { type: "timeZoneName", value: "shortOffset" };
-    // case "vvvv":
-    //   return { type: "timeZoneName", value: "longGeneric" };
-    // case "v":
-    //   return { type: "timeZoneName", value: "shortGeneric" };
+    case "zzzz":
+      return { type: "timeZoneName", value: "long" };
+    case "zzz":
+    case "zz":
+    case "z":
+      return { type: "timeZoneName", value: "short" };
+    case "ZZZZ":
+    case "OOOO":
+      return { type: "timeZoneName", value: "longOffset" };
+    case "O":
+      return { type: "timeZoneName", value: "shortOffset" };
+    case "vvvv":
+      return { type: "timeZoneName", value: "longGeneric" };
+    case "v":
+      return { type: "timeZoneName", value: "shortGeneric" };
     default:
       throw new Error(
         `ParserError: Cannot parse format symbol "${symbol}"`,
@@ -205,16 +204,28 @@ export function formatDate(
   formatParts: FormatPart[],
   options: Options = {},
 ): string {
+  const intlFormatParts = Intl.DateTimeFormat(options.locales, {
+    timeZone: options.timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    hour12: false,
+    minute: "numeric",
+    second: "numeric",
+    fractionalSecondDigits: 3,
+  }).formatToParts(date);
+  const intlFormatPartsMap = Object.fromEntries(
+    intlFormatParts.map((part) => [part.type, part.value]),
+  ) as { [k in DateTimeFormatPartTypes]?: string };
+
   let string = "";
-
-  const utc = options.timeZone === "UTC";
-
   for (const part of formatParts) {
     const type = part.type;
 
     switch (type) {
       case "year": {
-        const value = utc ? date.getUTCFullYear() : date.getFullYear();
+        const value = Number(intlFormatPartsMap.year);
         switch (part.value) {
           case "numeric": {
             string += value;
@@ -232,7 +243,7 @@ export function formatDate(
         break;
       }
       case "month": {
-        const value = (utc ? date.getUTCMonth() : date.getMonth()) + 1;
+        const value = Number(intlFormatPartsMap.month);
         switch (part.value) {
           case "numeric": {
             string += value;
@@ -250,7 +261,7 @@ export function formatDate(
         break;
       }
       case "day": {
-        const value = utc ? date.getUTCDate() : date.getDate();
+        const value = Number(intlFormatPartsMap.day);
         switch (part.value) {
           case "numeric": {
             string += value;
@@ -268,7 +279,7 @@ export function formatDate(
         break;
       }
       case "hour": {
-        let value = utc ? date.getUTCHours() : date.getHours();
+        let value = Number(intlFormatPartsMap.hour);
         if (part.hour12) {
           if (value === 0) value = 12;
           else if (value > 12) value -= 12;
@@ -290,7 +301,7 @@ export function formatDate(
         break;
       }
       case "minute": {
-        const value = utc ? date.getUTCMinutes() : date.getMinutes();
+        const value = Number(intlFormatPartsMap.minute);
         switch (part.value) {
           case "numeric": {
             string += value;
@@ -308,7 +319,7 @@ export function formatDate(
         break;
       }
       case "second": {
-        const value = utc ? date.getUTCSeconds() : date.getSeconds();
+        const value = Number(intlFormatPartsMap.second);
         switch (part.value) {
           case "numeric": {
             string += value;
@@ -326,13 +337,39 @@ export function formatDate(
         break;
       }
       case "fractionalSecond": {
-        const value = utc ? date.getUTCMilliseconds() : date.getMilliseconds();
+        const value = Number(intlFormatPartsMap.fractionalSecond);
         string += digits(value, 3).slice(0, Number(part.value));
         break;
       }
-      // FIXME(bartlomieju)
       case "timeZoneName": {
-        // string += utc ? "Z" : part.value
+        switch (part.value) {
+          case "short":
+          case "long":
+          case "shortOffset":
+          case "longOffset":
+          case "shortGeneric":
+          case "longGeneric": {
+            const parts = Intl.DateTimeFormat(options.locales, {
+              timeZone: options.timeZone,
+              timeZoneName: part.value,
+            }).formatToParts(date);
+            // Use findLast instead of find because usually this will be the last part
+            const timeZoneNamePart = parts.findLast((part) =>
+              part.type === "timeZoneName"
+            );
+            if (timeZoneNamePart === undefined) {
+              throw new Error(
+                `FormatterError: time zone not formatted, timeZoneName is "${part.value}" and options are ${options}`,
+              );
+            }
+            string += timeZoneNamePart.value;
+            break;
+          }
+          default:
+            throw new Error(
+              `FormatterError: value "${part.value}" is not supported`,
+            );
+        }
         break;
       }
       case "dayPeriod": {
